@@ -1,4 +1,6 @@
 # Authors: Hamza Tazi Bouardi (htazi@mit.edu), Michael L. Li (mlli@mit.edu), Omar Skali Lami (oskali@mit.edu)
+from app2 import app
+from flask import request, jsonify
 import os
 import yaml
 import logging
@@ -12,14 +14,15 @@ from scipy.integrate import solve_ivp
 from scipy.optimize import minimize
 from datetime import datetime, timedelta
 from functools import partial
-from tqdm import tqdm_notebook as tqdm
+# from tqdm import tqdm_notebook as tqdm
+from tqdm.notebook import tqdm
 from scipy.optimize import dual_annealing
-from DELPHI_utils_V3_static import (
+from files.DELPHI.DELPHI_utils_V3_static import (
     DELPHIDataCreator, DELPHIAggregations, DELPHIDataSaver, get_initial_conditions,
     get_mape_data_fitting, create_fitting_data_from_validcases, get_residuals_value
 )
-from DELPHI_utils_V3_dynamic import get_bounds_params_from_pastparams
-from DELPHI_params_V3 import (
+from files.DELPHI.DELPHI_utils_V3_dynamic import get_bounds_params_from_pastparams
+from files.DELPHI.DELPHI_params_V3 import (
     default_parameter_list,
     dict_default_reinit_parameters,
     dict_default_reinit_lower_bounds,
@@ -51,48 +54,18 @@ from DELPHI_params_V3 import (
 )
 
 ## Initializing Global Variables ##########################################################################
-with open("config.yml", "r") as ymlfile:
-    CONFIG = yaml.load(ymlfile, Loader=yaml.BaseLoader)
-CONFIG_FILEPATHS = CONFIG["filepaths"]
 time_beginning = time.time()
 yesterday = "".join(str(datetime.now().date() - timedelta(days=1)).split("-"))
 yesterday_logs_filename = "".join(
     (str(datetime.now().date() - timedelta(days=1)) + f"_{datetime.now().hour}H{datetime.now().minute}M").split("-")
 )
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    '--user', '-u', type=str, required=True,
-    choices=["omar", "hamza", "michael", "michael2", "ali", "mohammad", "server", "saksham"],
-    help="Who is the user running? User needs to be referenced in config.yml for the filepaths (e.g. hamza, michael): "
-)
-parser.add_argument(
-    '--optimizer', '-o', type=str, required=True, choices=["tnc", "trust-constr", "annealing"],
-    help=(
-            "Which optimizer among 'tnc', 'trust-constr' or 'annealing' would you like to use ? " +
-            "Note that 'tnc' and 'trust-constr' lead to local optima, while 'annealing' is a " +
-            "method for global optimization: "
-    )
-)
-parser.add_argument(
-    '--confidence_intervals', '-ci', type=int, required=True, choices=[0, 1],
-    help="Generate Confidence Intervals? Reply 0 or 1 for False or True.",
-)
-parser.add_argument(
-    '--since100case', '-s100', type=int, required=True, choices=[0, 1],
-    help="Save all history (since 100 cases)? Reply 0 or 1 for False or True.",
-)
-parser.add_argument(
-    '--website', '-w', type=int, required=True, choices=[0, 1],
-    help="Save to website? Reply 0 or 1 for False or True.",
-)
-arguments = parser.parse_args()
-USER_RUNNING = arguments.user
-OPTIMIZER = arguments.optimizer
-GET_CONFIDENCE_INTERVALS = bool(arguments.confidence_intervals)
-SAVE_TO_WEBSITE = bool(arguments.website)
-SAVE_SINCE100_CASES = bool(arguments.since100case)
-PATH_TO_FOLDER_DANGER_MAP = CONFIG_FILEPATHS["danger_map"][USER_RUNNING]
-PATH_TO_WEBSITE_PREDICTED = CONFIG_FILEPATHS["website"][USER_RUNNING]
+# USER_RUNNING = 'gw'#arguments.user
+OPTIMIZER = 'tnc'#arguments.optimizer
+GET_CONFIDENCE_INTERVALS = bool(0)#bool(arguments.confidence_intervals)
+SAVE_TO_WEBSITE = bool(0)#bool(arguments.website)
+SAVE_SINCE100_CASES = bool(1)#bool(arguments.since100case)
+PATH_TO_FOLDER_DANGER_MAP = "./files/DELPHI/danger_map/"#config.yml"#CONFIG_FILEPATHS["danger_map"][USER_RUNNING]
+PATH_TO_WEBSITE_PREDICTED = "./files/DELPHI/website/"#CONFIG_FILEPATHS["website"][USER_RUNNING]
 past_prediction_date = "".join(str(datetime.now().date() - timedelta(days=14)).split("-"))
 #############################################################################################################
 
@@ -155,8 +128,7 @@ def solve_and_predict_area(
                     default_upper_bound_std_normal=default_upper_bound_std_normal,
                 )
                 date_day_since100 = pd.to_datetime(parameter_list_line[3])
-                validcases = totalcases[
-                    (totalcases.day_since100 >= 0)
+                validcases = totalcases[(totalcases.day_since100 >= 0)
                     & (totalcases.date <= str((pd.to_datetime(yesterday_) + timedelta(days=1)).date()))
                 ][["day_since100", "case_cnt", "death_cnt"]].reset_index(drop=True)
                 bounds_params = tuple(bounds_params)
@@ -165,30 +137,19 @@ def solve_and_predict_area(
                 parameter_list = default_parameter_list
                 bounds_params = default_bounds_params
                 date_day_since100 = pd.to_datetime(totalcases.loc[totalcases.day_since100 == 0, "date"].iloc[-1])
-                validcases = totalcases[
-                    (totalcases.day_since100 >= 0) &
-                    (totalcases.date <= str((pd.to_datetime(yesterday_) + timedelta(days=1)).date()))
-                ][["day_since100", "case_cnt", "death_cnt"]].reset_index(drop=True)
+                validcases = totalcases[(totalcases.day_since100 >= 0) &(totalcases.date <= str((pd.to_datetime(yesterday_) + timedelta(days=1)).date()))][["day_since100", "case_cnt", "death_cnt"]].reset_index(drop=True)
         else:
             # Otherwise use established lower/upper bounds
             parameter_list = default_parameter_list
             bounds_params = default_bounds_params
             date_day_since100 = pd.to_datetime(totalcases.loc[totalcases.day_since100 == 0, "date"].iloc[-1])
-            validcases = totalcases[
-                (totalcases.day_since100 >= 0) &
-                (totalcases.date <= str((pd.to_datetime(yesterday_) + timedelta(days=1)).date()))
-            ][["day_since100", "case_cnt", "death_cnt"]].reset_index(drop=True)
+            validcases = totalcases[(totalcases.day_since100 >= 0) &(totalcases.date <= str((pd.to_datetime(yesterday_) + timedelta(days=1)).date()))][["day_since100", "case_cnt", "death_cnt"]].reset_index(drop=True)
         # Now we start the modeling part:
         if len(validcases) <= validcases_threshold:
-            logging.warning(
-                f"Not enough historical data (less than a week)"
-                + f"for Continent={continent}, Country={country} and Province={province}"
-            )
+            logging.warning(f"Not enough historical data (less than a week)"+ f"for Continent={continent}, Country={country} and Province={province}")
             return None
         else:
-            PopulationT = popcountries[
-                (popcountries.Country == country) & (popcountries.Province == province)
-            ].pop2016.iloc[-1]
+            PopulationT = popcountries[(popcountries.Country == country) & (popcountries.Province == province)].pop2016.iloc[-1]
             N = PopulationT
             PopulationI = validcases.loc[0, "case_cnt"]
             PopulationR = validcases.loc[0, "death_cnt"] * 5
@@ -212,9 +173,7 @@ def solve_and_predict_area(
             balance, cases_data_fit, deaths_data_fit = create_fitting_data_from_validcases(validcases)
             GLOBAL_PARAMS_FIXED = (N, PopulationCI, PopulationR, PopulationD, PopulationI, p_d, p_h, p_v)
 
-            def model_covid(
-                t, x, alpha, days, r_s, r_dth, p_dth, r_dthdecay, k1, k2, jump, t_jump, std_normal,
-            ) -> list:
+            def model_covid(t, x, alpha, days, r_s, r_dth, p_dth, r_dthdecay, k1, k2, jump, t_jump, std_normal,) -> list:
                 """
                 SEIR based model with 16 distinct states, taking into account undetected, deaths, hospitalized and
                 recovered, and using an ArcTan government response curve, corrected with a Gaussian jump in case of
@@ -245,9 +204,7 @@ def solve_and_predict_area(
                     + jump * np.exp(-(t - t_jump) ** 2 / (2 * std_normal ** 2))
                 )
                 p_dth_mod = (2 / np.pi) * (p_dth - 0.01) * (np.arctan(-t / 20 * r_dthdecay) + np.pi / 2) + 0.01
-                assert (
-                    len(x) == 16
-                ), f"Too many input variables, got {len(x)}, expected 16"
+                assert (len(x) == 16), f"Too many input variables, got {len(x)}, expected 16"
                 S, E, I, AR, DHR, DQR, AD, DHD, DQD, R, D, TH, DVR, DVD, DD, DT = x
                 # Equations on main variables
                 dSdt = -alpha * gamma_t * S * I / N
@@ -267,10 +224,7 @@ def solve_and_predict_area(
                 dDVDdt = r_d * p_dth_mod * p_d * p_h * p_v * I - r_dth * DVD
                 dDDdt = r_dth * (DHD + DQD)
                 dDTdt = r_d * p_d * I
-                return [
-                    dSdt, dEdt, dIdt, dARdt, dDHRdt, dDQRdt, dADdt, dDHDdt,
-                    dDQDdt, dRdt, dDdt, dTHdt, dDVRdt, dDVDdt, dDDdt, dDTdt,
-                ]
+                return [dSdt, dEdt, dIdt, dARdt, dDHRdt, dDQRdt, dADdt, dDHDdt, dDQDdt, dRdt, dDdt, dTHdt, dDVRdt, dDVDdt, dDDdt, dDTdt,]
 
             def residuals_totalcases(params) -> float:
                 """
@@ -409,15 +363,14 @@ def solve_and_predict_area(
         return None
 
 
-if __name__ == "__main__":
-    assert USER_RUNNING in CONFIG_FILEPATHS["delphi_repo"].keys(), f"User {USER_RUNNING} not referenced in config.yml"
-    if not os.path.exists(CONFIG_FILEPATHS["logs"][USER_RUNNING] + "model_fitting/"):
-        os.mkdir(CONFIG_FILEPATHS["logs"][USER_RUNNING] + "model_fitting/")
-
-    logger_filename = (
-            CONFIG_FILEPATHS["logs"][USER_RUNNING] +
-            f"model_fitting/delphi_model_V3_{yesterday_logs_filename}_{OPTIMIZER}.log"
-    )
+def runModel():
+    print('start getDELPHIModel')
+    # assert USER_RUNNING in CONFIG_FILEPATHS["delphi_repo"].keys(), f"User {USER_RUNNING} not referenced in config.yml"
+    LOGGINGPATH = "./files/DELPHI/model_fitting/"
+    if not os.path.exists(LOGGINGPATH):
+        os.mkdir(LOGGINGPATH)
+    
+    logger_filename = (LOGGINGPATH +f"delphi_model_V3_{yesterday_logs_filename}_{OPTIMIZER}.log")
     logging.basicConfig(
         filename=logger_filename,
         level=logging.DEBUG,
@@ -425,20 +378,22 @@ if __name__ == "__main__":
         datefmt="%m-%d-%Y %I:%M:%S %p",
     )
     logging.info(
-        f"The user is {USER_RUNNING}, the chosen optimizer for this run was {OPTIMIZER} and " +
+        f"The chosen optimizer for this run was {OPTIMIZER} and " +
         f"generation of Confidence Intervals' flag is {GET_CONFIDENCE_INTERVALS}"
     )
-    popcountries = pd.read_csv(
-        PATH_TO_FOLDER_DANGER_MAP + f"processed/Global/Population_Global.csv"
-    )
-    popcountries["tuple_area"] = list(zip(popcountries.Continent, popcountries.Country, popcountries.Province))
+    # hack point
     try:
-        past_parameters = pd.read_csv(
-            PATH_TO_FOLDER_DANGER_MAP
-            + f"predicted/Parameters_Global_V2_{yesterday}.csv"
-        )
-    except:
-        past_parameters = None
+        popcountries = pd.read_csv(PATH_TO_FOLDER_DANGER_MAP + f"processed/Global/Population_Global.csv")
+    except OSError as err:
+        print("OS error: {0}".format(err))
+    popcountries["tuple_area"] = list(zip(popcountries.Continent, popcountries.Country, popcountries.Province))
+    # try:
+    #     past_parameters = pd.read_csv(
+    #         PATH_TO_FOLDER_DANGER_MAP
+    #         + f"predicted/Parameters_Global_V2_{yesterday}.csv"
+    #     )
+    # except:
+    past_parameters = None
 
     # Initalizing lists of the different dataframes that will be concatenated in the end
     list_df_global_predictions_since_today = []
@@ -479,17 +434,12 @@ if __name__ == "__main__":
         logging.info("Finished the Multiprocessing for all areas")
         pool.close()
         pool.join()
-
     # Appending parameters, aggregations per country, per continent, and for the world
     # for predictions today & since 100
-    today_date_str = "".join(str(datetime.now().date()).split("-"))
-    df_global_parameters = pd.concat(list_df_global_parameters).sort_values(
-        ["Country", "Province"]
-    ).reset_index(drop=True)
+    # today_date_str = "".join(str(datetime.now().date()).split("-"))
+    df_global_parameters = pd.concat(list_df_global_parameters).sort_values(["Country", "Province"]).reset_index(drop=True)
     df_global_predictions_since_today = pd.concat(list_df_global_predictions_since_today)
-    df_global_predictions_since_today = DELPHIAggregations.append_all_aggregations(
-        df_global_predictions_since_today
-    )
+    df_global_predictions_since_today = DELPHIAggregations.append_all_aggregations(df_global_predictions_since_today)
     df_global_predictions_since_100_cases = pd.concat(list_df_global_predictions_since_100_cases)
     if GET_CONFIDENCE_INTERVALS:
         df_global_predictions_since_today, df_global_predictions_since_100_cases = DELPHIAggregations.append_all_aggregations_cf(
@@ -498,10 +448,7 @@ if __name__ == "__main__":
             past_prediction_date=str(pd.to_datetime(past_prediction_date).date())
         )
     else:
-        df_global_predictions_since_100_cases = DELPHIAggregations.append_all_aggregations(
-            df_global_predictions_since_100_cases
-        )
-
+        df_global_predictions_since_100_cases = DELPHIAggregations.append_all_aggregations(df_global_predictions_since_100_cases)
     delphi_data_saver = DELPHIDataSaver(
         path_to_folder_danger_map=PATH_TO_FOLDER_DANGER_MAP,
         path_to_website_predicted=PATH_TO_WEBSITE_PREDICTED,
@@ -509,8 +456,141 @@ if __name__ == "__main__":
         df_global_predictions_since_today=df_global_predictions_since_today,
         df_global_predictions_since_100_cases=df_global_predictions_since_100_cases,
     )
-    delphi_data_saver.save_all_datasets(optimizer=OPTIMIZER, save_since_100_cases=SAVE_SINCE100_CASES, website=SAVE_TO_WEBSITE)
+    res = delphi_data_saver.save_all_datasets_jsonformat(optimizer=OPTIMIZER, save_since_100_cases=SAVE_SINCE100_CASES, website=SAVE_TO_WEBSITE)
     logging.info(
         f"Exported all 3 datasets to website & danger_map repositories, "
         + f"total runtime was {round((time.time() - time_beginning)/60, 2)} minutes"
     )
+    print('end getDELPHIModel')
+    return res
+
+@app.route('/loadDELPHIModel', methods=['GET'])
+def getDELPHIModel():
+#     print('start getDELPHIModel')
+#     # assert USER_RUNNING in CONFIG_FILEPATHS["delphi_repo"].keys(), f"User {USER_RUNNING} not referenced in config.yml"
+#     LOGGINGPATH = "./files/DELPHI/model_fitting/"
+#     if not os.path.exists(LOGGINGPATH):
+#         os.mkdir(LOGGINGPATH)
+    
+#     logger_filename = (LOGGINGPATH +f"delphi_model_V3_{yesterday_logs_filename}_{OPTIMIZER}.log")
+#     logging.basicConfig(
+#         filename=logger_filename,
+#         level=logging.DEBUG,
+#         format="%(asctime)s | %(levelname)s | %(message)s",
+#         datefmt="%m-%d-%Y %I:%M:%S %p",
+#     )
+#     logging.info(
+#         f"The chosen optimizer for this run was {OPTIMIZER} and " +
+#         f"generation of Confidence Intervals' flag is {GET_CONFIDENCE_INTERVALS}"
+#     )
+#     # hack point
+#     try:
+#         popcountries = pd.read_csv(PATH_TO_FOLDER_DANGER_MAP + f"processed/Global/Population_Global.csv")
+#     except OSError as err:
+#         print("OS error: {0}".format(err))
+#     popcountries["tuple_area"] = list(zip(popcountries.Continent, popcountries.Country, popcountries.Province))
+#     # try:
+#     #     past_parameters = pd.read_csv(
+#     #         PATH_TO_FOLDER_DANGER_MAP
+#     #         + f"predicted/Parameters_Global_V2_{yesterday}.csv"
+#     #     )
+#     # except:
+#     past_parameters = None
+
+#     # Initalizing lists of the different dataframes that will be concatenated in the end
+#     list_df_global_predictions_since_today = []
+#     list_df_global_predictions_since_100_cases = []
+#     list_df_global_parameters = []
+#     obj_value = 0
+#     solve_and_predict_area_partial = partial(
+#         solve_and_predict_area,
+#         yesterday_=yesterday,
+#         past_parameters_=past_parameters,
+#         popcountries=popcountries,
+#     )
+#     n_cpu = psutil.cpu_count(logical = False)
+#     logging.info(f"Number of CPUs found and used in this run: {n_cpu}")
+
+#     list_tuples = popcountries.tuple_area.tolist()
+# #    list_tuples = [x for x in list_tuples if x[0] == "Oceania"]
+#     logging.info(f"Number of areas to be fitted in this run: {len(list_tuples)}")
+#     with mp.Pool(n_cpu) as pool:
+#         for result_area in tqdm(
+#             pool.map_async(solve_and_predict_area_partial, list_tuples).get(),
+#             total=len(list_tuples),
+#         ):
+#             if result_area is not None:
+#                 (
+#                     df_parameters_area,
+#                     df_predictions_since_today_area,
+#                     df_predictions_since_100_area,
+#                     output,
+#                 ) = result_area
+#                 obj_value = obj_value + output.fun
+#                 # Then we add it to the list of df to be concatenated to update the tracking df
+#                 list_df_global_parameters.append(df_parameters_area)
+#                 list_df_global_predictions_since_today.append(df_predictions_since_today_area)
+#                 list_df_global_predictions_since_100_cases.append(df_predictions_since_100_area)
+#             else:
+#                 continue
+#         logging.info("Finished the Multiprocessing for all areas")
+#         pool.close()
+#         pool.join()
+#     # Appending parameters, aggregations per country, per continent, and for the world
+#     # for predictions today & since 100
+#     # today_date_str = "".join(str(datetime.now().date()).split("-"))
+#     df_global_parameters = pd.concat(list_df_global_parameters).sort_values(["Country", "Province"]).reset_index(drop=True)
+#     df_global_predictions_since_today = pd.concat(list_df_global_predictions_since_today)
+#     df_global_predictions_since_today = DELPHIAggregations.append_all_aggregations(df_global_predictions_since_today)
+#     df_global_predictions_since_100_cases = pd.concat(list_df_global_predictions_since_100_cases)
+#     if GET_CONFIDENCE_INTERVALS:
+#         df_global_predictions_since_today, df_global_predictions_since_100_cases = DELPHIAggregations.append_all_aggregations_cf(
+#             df_global_predictions_since_100_cases,
+#             past_prediction_file=PATH_TO_FOLDER_DANGER_MAP + f"predicted/Global_V2_{past_prediction_date}.csv",
+#             past_prediction_date=str(pd.to_datetime(past_prediction_date).date())
+#         )
+#     else:
+#         df_global_predictions_since_100_cases = DELPHIAggregations.append_all_aggregations(df_global_predictions_since_100_cases)
+#     delphi_data_saver = DELPHIDataSaver(
+#         path_to_folder_danger_map=PATH_TO_FOLDER_DANGER_MAP,
+#         path_to_website_predicted=PATH_TO_WEBSITE_PREDICTED,
+#         df_global_parameters=df_global_parameters,
+#         df_global_predictions_since_today=df_global_predictions_since_today,
+#         df_global_predictions_since_100_cases=df_global_predictions_since_100_cases,
+#     )
+#     res = delphi_data_saver.save_all_datasets_jsonformat(optimizer=OPTIMIZER, save_since_100_cases=SAVE_SINCE100_CASES, website=SAVE_TO_WEBSITE)
+#     logging.info(
+#         f"Exported all 3 datasets to website & danger_map repositories, "
+#         + f"total runtime was {round((time.time() - time_beginning)/60, 2)} minutes"
+#     )
+#     print('end getDELPHIModel')
+    res = runModel()
+    return jsonify(res)
+# parser = argparse.ArgumentParser()
+# parser.add_argument(
+#     '--user', '-u', type=str, required=True,
+#     # choices=["omar", "hamza", "michael", "michael2", "ali", "mohammad", "server", "saksham"],
+#     choices = ["gw"],
+#     help="Who is the user running? User needs to be referenced in config.yml for the filepaths (e.g. hamza, michael): "
+# )
+# parser.add_argument(
+#     '--optimizer', '-o', type=str, required=True, choices=["tnc", "trust-constr", "annealing"],
+#     help=(
+#             "Which optimizer among 'tnc', 'trust-constr' or 'annealing' would you like to use ? " +
+#             "Note that 'tnc' and 'trust-constr' lead to local optima, while 'annealing' is a " +
+#             "method for global optimization: "
+#     )
+# )
+# parser.add_argument(
+#     '--confidence_intervals', '-ci', type=int, required=True, choices=[0, 1],
+#     help="Generate Confidence Intervals? Reply 0 or 1 for False or True.",
+# )
+# parser.add_argument(
+#     '--since100case', '-s100', type=int, required=True, choices=[0, 1],
+#     help="Save all history (since 100 cases)? Reply 0 or 1 for False or True.",
+# )
+# parser.add_argument(
+#     '--website', '-w', type=int, required=True, choices=[0, 1],
+#     help="Save to website? Reply 0 or 1 for False or True.",
+# )
+# arguments = parser.parse_args()

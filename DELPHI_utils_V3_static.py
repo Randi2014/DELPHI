@@ -7,12 +7,12 @@ from datetime import datetime, timedelta
 from typing import Union
 import json
 from logging import Logger
-from DELPHI_params_V3 import (
+from files.DELPHI.DELPHI_params_V3 import (
     TIME_DICT,
     default_policy,
     default_policy_enaction_time,
 )
-from DELPHI_utils_V3_dynamic import make_increasing
+from files.DELPHI.DELPHI_utils_V3_dynamic import make_increasing
 
 
 class DELPHIDataSaver:
@@ -56,12 +56,12 @@ class DELPHIDataSaver:
             raise ValueError("Optimizer not supported in this implementation")
         # Save parameters
         self.df_global_parameters.to_csv(
-            self.PATH_TO_FOLDER_DANGER_MAP + f"/predicted/Parameters_{subname_file}_{today_date_str}.csv",
+            self.PATH_TO_FOLDER_DANGER_MAP + f"predicted/Parameters_{subname_file}_{today_date_str}.csv",
             index=False,
             )
         # Save predictions since today
         self.df_global_predictions_since_today.to_csv(
-            self.PATH_TO_FOLDER_DANGER_MAP + f"/predicted/{subname_file}_{today_date_str}.csv",
+            self.PATH_TO_FOLDER_DANGER_MAP + f"predicted/{subname_file}_{today_date_str}.csv",
             index=False,
             )
         if website:
@@ -93,6 +93,77 @@ class DELPHIDataSaver:
                     self.PATH_TO_WEBSITE_PREDICTED + f"data/predicted/{subname_file}_since100.csv",
                     index=False,
                     )
+
+    def save_all_datasets_jsonformat(
+            self, optimizer: str, save_since_100_cases: bool = False, website: bool = False
+    ):
+        """
+        Saves the parameters and predictions datasets (since 100 cases and since the day of running)
+        based on the different flags and the inputs to the DELPHIDataSaver initializer
+        :param optimizer: needs to be in (tnc, trust-constr, annealing) and will save files differently accordingly; the
+        default name corresponds to tnc where we don't specify the optimizer because that's the default one
+        :param save_since_100_cases: boolean, whether or not we also want to save the predictions since 100 cases
+        for all the areas (instead of since the day we actually ran the optimization)
+        :param website: boolean, whether or not we want to save the files in the website repository as well
+        :return:
+        """
+        # today_date_str = "".join(str(datetime.now().date()).split("-"))
+        # if optimizer == "tnc":
+        #     subname_file = "Global_V2"
+        # elif optimizer == "annealing":
+        #     subname_file = "Global_V2_annealing"
+        # elif optimizer == "trust-constr":
+        #     subname_file = "Global_V2_trust"
+        # else:
+        #     raise ValueError("Optimizer not supported in this implementation")
+        res={}
+        # Save parameters
+        params_cols = ["Data Start Date","MAPE","Infection Rate","Median Day of Action","Rate of Action","Rate of Death","Mortality Rate","Rate of Mortality Rate Decay","Internal Parameter 1","Internal Parameter 2","Jump Magnitude","Jump Time","Jump Decay"]        
+        for rowIndex in range(len(self.df_global_parameters.index)): 
+            location = self.df_global_parameters.iloc[rowIndex]["Continent"] +  "-" + self.df_global_parameters.iloc[rowIndex]["Country"] + "-" + self.df_global_parameters.iloc[rowIndex]["Province"]            
+            res[location] = {'parameters':{}}                     
+            for tag in params_cols:
+                res[location]['parameters'][tag] = self.df_global_parameters.iloc[rowIndex][tag]                   
+        # Save predictions since today # self.df_global_predictions_since_today        
+        predictions_cols=['Day','Total Detected','Active','Active Hospitalized','Cumulative Hospitalized','Total Detected Deaths','Active Ventilated']
+        exportPredictionVars = {'Day':'time','Total Detected': 'infectious','Total Detected Deaths':'fatality'}
+        for rowIndex in range(len(self.df_global_predictions_since_today.index)): 
+            location = self.df_global_predictions_since_today.iloc[rowIndex]["Continent"] +  "-" + self.df_global_predictions_since_today.iloc[rowIndex]["Country"] + "-" + self.df_global_predictions_since_today.iloc[rowIndex]["Province"]        
+            if location in res.keys():
+                if len(res[location].keys())==1:
+                    res[location]['prediction']=[]                
+                oneday={}
+                for tag in predictions_cols:
+                    if tag in exportPredictionVars:
+                        tag2 = exportPredictionVars[tag]
+                        val = self.df_global_predictions_since_today.iloc[rowIndex][tag] 
+                        if isinstance(val, np.int64):
+                            oneday[tag2] = int(val)
+                        else:
+                            oneday[tag2] = val
+                res[location]['prediction'].append(oneday)            
+
+        if save_since_100_cases:
+            # Save predictions since 100 cases
+            # self.df_global_predictions_since_100_cases
+            # print(self.df_global_predictions_since_100_cases.columns)
+            for rowIndex in range(len(self.df_global_predictions_since_100_cases.index)): 
+                location = self.df_global_predictions_since_100_cases.iloc[rowIndex]["Continent"] +  "-" + self.df_global_predictions_since_100_cases.iloc[rowIndex]["Country"] + "-" + self.df_global_predictions_since_100_cases.iloc[rowIndex]["Province"]        
+                if location in res.keys():
+                    if 'prediction_since_100' not in res[location]:
+                        res[location]['prediction_since_100']=[]                
+                    oneday={}
+                    for tag in predictions_cols:
+                        if tag in exportPredictionVars:
+                            tag2 = exportPredictionVars[tag]
+                            val = self.df_global_predictions_since_100_cases.iloc[rowIndex][tag] 
+                            if isinstance(val, np.int64):
+                                oneday[tag2] = int(val)
+                            else:
+                                oneday[tag2] = val
+                    res[location]['prediction_since_100'].append(oneday)   
+        return res
+
 
     def save_policy_predictions_to_json(self, website: bool = False, local_delphi: bool = False):
         """

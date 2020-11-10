@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Union
 from copy import deepcopy
 from itertools import compress
-from DELPHI_params_V3 import MAPPING_STATE_CODE_TO_STATE_NAME, future_policies
+from files.DELPHI.DELPHI_params_V3 import MAPPING_STATE_CODE_TO_STATE_NAME, future_policies
 
 
 def get_bounds_params_from_pastparams(
